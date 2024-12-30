@@ -111,3 +111,51 @@ db > delete 4
 
 This will remove the record with ID 4 from the database and update the B-tree accordingly.
 
+### B-tree Structure
+
+The B-tree stores the database records in an efficient, sorted structure. When you use the `.btree` command, the current structure of the tree will be displayed, showing the internal nodes, leaf nodes, and the keys.
+
+For example, after inserting several records and then deleting one, the output may look like this:
+
+```
+db > Tree:
+- internal (size 1)
+  - internal (size 2)
+    - leaf (size 13)
+      - 1
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+      - 9
+      - 10
+      - 11
+      - 12
+      - 13
+    - key 13
+    - leaf (size 7)
+      - 14
+      - 15
+      - 16
+      - 17
+      - 18
+      - 19
+      - 20
+    - key 20
+```
+
+The `insert` and `delete` commands will dynamically adjust the tree structure, and the .btree command will reflect these changes.
+
+## Contributing
+
+Feel free to fork the project and submit pull requests with improvements, bug fixes, or new features. If you have any suggestions or issues, please open an issue in the repository.
+
+## License
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+This project builds upon the concepts introduced in the original db_tutorial and is part of an ongoing exploration of database structures and memory management in C.
+
