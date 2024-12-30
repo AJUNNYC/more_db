@@ -52,3 +52,7 @@ db > .exit
 - **.btree**: Prints the current structure of the B-tree. The B-tree will show the keys and how they are distributed across the internal and leaf nodes.
 - **.exit**: Exits the program.
 
+### Example Walkthrough
+
+#### Inserting Data
+
