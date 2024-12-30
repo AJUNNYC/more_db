@@ -54,5 +54,60 @@ db > .exit
 
 ### Example Walkthrough
 
-#### Inserting Data
+#### Inserting Data:
+
+To insert users, run commands like the following:
+
+```
+db > insert 1 user1 person1@example.com
+db > insert 2 user2 person2@example.com
+db > insert 3 user3 person3@example.com
+```
+This will insert users with IDs 1, 2, and 3 into the database.
+
+#### Deleting Data:
+
+To delete a user from the database, you can use the `delete` command. For example:
+
+```
+db > delete 2
+```
+This will delete the user with ID 2 from the database.
+
+#### Viewing the B-tree Structure:
+
+To see the current structure of the B-tree, use the `.btree` command:
+
+```
+db > .btree
+```
+This will display a hierarchical structure of the B-tree with nodes and keys.
+
+#### Example Output:
+
+```
+db > Tree:
+- internal (size 1)
+  - leaf (size 2)
+    - 1
+    - 3
+  - key 3
+```
+
+#### Exiting the Program:
+
+To exit the program, use the .exit command:
+```
+db > .exit
+```
+
+### Delete Command
+
+The `delete` command allows you to remove a record from the database by specifying its unique ID. For example:
+
+```
+db > delete 4
+```
+
+This will remove the record with ID 4 from the database and update the B-tree accordingly.
 
