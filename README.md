@@ -44,8 +44,8 @@ db > insert 3 user3 person3@example.com
 db > delete 2
 db > .btree
 db > .exit
-insert: Adds a new record to the database. Each insert command will add a user record with an ID, name, and email address.
-delete: Removes a record from the database by specifying the ID of the user to be deleted.
-.btree: Prints the current structure of the B-tree. The B-tree will show the keys and how they are distributed across the internal and leaf nodes.
-.exit: Exits the program.
+- **insert**: Adds a new record to the database. Each insert command will add a user record with an ID, name, and email address.
+- **delete**: Removes a record from the database by specifying the ID of the user to be deleted.
+- **.btree**: Prints the current structure of the B-tree. The B-tree will show the keys and how they are distributed across the internal and leaf nodes.
+- **.exit**: Exits the program.
 
