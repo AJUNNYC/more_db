@@ -29,11 +29,9 @@ This project is an extension of the **db_tutorial**, a simple database project. 
 
 ## Installation
 
-### Prerequisites:
-- C compiler (e.g., GCC)
-- Make (for building the project)
-
 ### Steps:
-1. Clone the repository:
+1. Download the C file (`db_tutorial_enhanced.c`) to your local machine.
+
+2. Compile the file using `clang`:
    ```bash
-   git clone https://github.com/yourusername/db_tutorial_enhanced.git
+   clang -o db_tutorial_enhanced db_tutorial_enhanced.c
