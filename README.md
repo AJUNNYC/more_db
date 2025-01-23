@@ -36,7 +36,7 @@ This project is an extension of the **db_tutorial** project by cstack. The enhan
    ```bash
    clang -o db_tutorial_enhanced db_tutorial_enhanced.c
 
-## USAGE
+## Usage
 You can use this project as a simple database that allows inserting, deleting, and printing the structure of the tree. Here's an example of how to interact with the program:
 ```
 db > insert 1 user1 person1@example.com
