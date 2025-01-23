@@ -1,6 +1,6 @@
 # Enhanced DB_Tutorial Project
 
-This project builds upon the original **db_tutorial** project, adding several important features to improve its functionality and efficiency. The enhancements include a **delete** feature, a **mechanism for freeing pages**, an **LRU (Least Recently Used) mechanism** for loading and unloading pages, and a transition to using `char*` instead of the previous `void*` for better consistency.
+This project builds upon the original **db_tutorial** project by cstack, adding several important features to improve its functionality and efficiency. These enhancements include a **delete** feature, a **mechanism for freeing pages**, an **LRU (Least Recently Used) mechanism** for loading and unloading pages, and a transition to using `char*` instead of the previous `void*` for better pointer consistency.
 
 ## Table of Contents
 - [Description](#description)
@@ -13,7 +13,7 @@ This project builds upon the original **db_tutorial** project, adding several im
 
 ## Description
 
-This project is an extension of the **db_tutorial**, a simple database project. The enhancements in this version aim to provide better memory management, efficient page handling, and consistent pointer usage. The project now includes:
+This project is an extension of the **db_tutorial** project by cstack. The enhancements in this version aim to provide better memory management, efficient page handling, and consistent pointer usage. The project now includes:
 
 - **Delete functionality**: The ability to delete records from the database.
 - **Memory management improvements**: A new mechanism for freeing pages to optimize memory usage.
