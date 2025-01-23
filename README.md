@@ -24,7 +24,7 @@ This project is an extension of the **db_tutorial** project by cstack. The enhan
 
 - **Delete Operation**: Implemented a mechanism to delete data entries from the database.
 - **Page Management**: Introduced a page freeing mechanism that efficiently handles memory.
-- **LRU Caching**: Uses an LRU caching system to automatically manage page loading/unloading, keeping the most recently accessed pages in memory.
+- **LRU Caching**: Uses an LRU caching system to automatically manage page loading/unloading, keeping the most recently accessed pages in memory. Pages that are currently in use however, will be pinned and unable to be unloaded. Only unpinned pages are unloaded.
 - **Code Cleanup**: Replaced `void*` with `char*` for better type safety and consistency in pointer usage across the codebase.
 
 ## Installation
@@ -147,6 +147,16 @@ db > Tree:
 ```
 
 The `insert` and `delete` commands will dynamically adjust the tree structure, and the .btree command will reflect these changes.
+
+### LRU Cache
+
+The `delete` command allows you to remove a record from the database by specifying its unique ID. For example:
+
+```
+db > delete 4
+```
+
+This will remove the record with ID 4 from the database and update the B-tree accordingly.
 
 ## Contributing
 
