@@ -1429,7 +1429,9 @@ void internal_node_delete(Table* table, uint32_t parent_page_num, uint32_t child
 
 void internal_node_merge(Table* table, uint32_t page_num) {
   PinnedPages* tracker = init_pinned_pages();
+  
   /* Fetch the underfilled internal node, its parent, its right child, and its index within its own parent.*/
+  
   char* node = get_page(table->pager, page_num, tracker);
   char* parent = get_page(table->pager, *node_parent(node), tracker);
   char* child = get_page(table->pager, *internal_node_right_child(node), tracker);
@@ -1504,12 +1506,15 @@ void internal_node_merge(Table* table, uint32_t page_num) {
       }
       update_internal_node_key(parent, old_max_key, new_max_key);
     }
+      
     /* Set the first child of the underfilled internal node to the first child of the underfilled internal node's sibling. */
+      
     else {
       *internal_node_child(node, 0) = *internal_node_child(sibling, sibling_cell_num);
       *internal_node_key(node, 0) = get_node_max_key(table->pager, source);
     }
     /* Delete from the underfilled internal node's sibling its child that was transferred to the underfilled internla node */
+    
     internal_node_delete(table, sibling_page_num, *internal_node_child(sibling, sibling_cell_num), sibling_cell_num);
     pop_free_page(table->pager);
   }
@@ -1547,24 +1552,29 @@ void leaf_node_merge(Cursor* cursor);
 void leaf_node_delete(Cursor* cursor, uint32_t key) {
 
   PinnedPages* tracker = init_pinned_pages();
-  /*
-  If the row to be deleted is the right child, we need to update the parent node's right child, 
-  and so on if the parent node is also a right child.
-  Otherwise, we can shift the all rows above the above to be deleted downward by 1
-  At the end, we subtract the total number of cells (or rows) in the node by 1 and check if this
-  causes the node to become underfilled. If it does, and if it is not the root node, then we call 
-  leaf_node_merge(). If it is the root node, then it is fine to let it remain underfilled.
   
-  */
+  /* Fetch the leaf node of the row that is to be deleted and how many rows it currently ha.s */
+  
   char* node = get_page(cursor->table->pager, cursor->page_num, tracker);
   uint32_t num_cells = *leaf_node_num_cells(node);
+
+  /* If the row to be deleted is not the right child of its leaf node, we shift all the rows 
+  after the deleted one to the left to fill the gap. */
   
   if (cursor->cell_num + 1 < num_cells) {
     for (uint32_t i = cursor->cell_num; i + 1 < num_cells; i++) {
       memcpy(leaf_node_cell(node, i), leaf_node_cell(node, i + 1), LEAF_NODE_CELL_SIZE);
     }
   }
+    
+  /* If the row to be deleted is the right child of its leaf node, we decrease the number of rows its leaf node
+  has by 1. */
+    
   else if (cursor->cell_num + 1 == num_cells && !is_node_root(node)) {
+    
+    /* If the leaf node containing the row to be deleted is not the root, then we must also update the leaf node's key in its own parent 
+    and so on if the parent is the right child of its own parent.*/
+    
     char* parent = get_page(cursor->table->pager, *node_parent(node), tracker);
     uint32_t old_max_key = get_node_max_key(cursor->table->pager, node);
     uint32_t new_max_key = *leaf_node_key(node, cursor->cell_num - 1);
@@ -1581,7 +1591,9 @@ void leaf_node_delete(Cursor* cursor, uint32_t key) {
   }
 
   *(leaf_node_num_cells(node)) -= 1;
-
+  
+  /* If the leaf node that of the deleted row becomes underfilled after deletion, and it is not the root, we call leaf_node_merge*/
+  
   if (*leaf_node_num_cells(node) < 7 && !is_node_root(node)) {
     leaf_node_merge(cursor);
   }
