@@ -1394,9 +1394,12 @@ void internal_node_delete(Table* table, uint32_t parent_page_num, uint32_t child
   need to either merge it with one of its siblings or give it an extra cell from one of its siblings.
   */
 
+  /* Fetch the child to be deleted and its internal node. */
+
   char* child = get_page(table->pager, child_page_num, tracker);
   char* parent = get_page(table->pager, parent_page_num, tracker);
 
+    /* If the child is the right child of its parent,  */
     if (index == *internal_node_num_keys(parent)) {
       *internal_node_right_child(parent) = *internal_node_child(parent, index - 1);
     }
