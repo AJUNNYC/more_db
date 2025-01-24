@@ -1388,7 +1388,7 @@ void internal_node_delete(Table* table, uint32_t parent_page_num, uint32_t child
 
   PinnedPages* tracker = init_pinned_pages();
 
-  /* If the iternal node to be deleted is the right child, then we only need to replace it with the its left sibling
+  /* If the internal node to be deleted is the right child, then we only need to replace it with the its left sibling
   and update the maximum key in the parent. Otherwise, we can just shift all of the internal node's siblings to the right 
   of it down by 1 via memcpy. However, if as a result fo deleting the internal node the parent becomes underfilled, then we would 
   need to either merge it with one of its siblings or give it an extra cell from one of its siblings.
@@ -1445,6 +1445,8 @@ void internal_node_merge(Table* table, uint32_t page_num) {
   cell at index 0 by setting that cell to become the node's right child. The previous right child would then become the first cell 
   of the internal node. Otherwise, if it is to the left of the node, we will give the node the sibling's right child and set it at 
   index 0 of the node while the node's previous cell becomes its new right child.
+
+  Finally, we will call internal_node_delete on the sibling that was shared.
   */
 
   if (index == *internal_node_num_keys(parent)) {
