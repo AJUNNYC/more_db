@@ -95,7 +95,7 @@ typedef struct {
   int file_descriptor;
   uint32_t file_length;
   uint32_t num_pages;
-  char* pages[TABLE_MAX_PAGES];
+  char* pages[MAX_NUM_LOADED_PAGES];
   uint32_t freed_pages_stack[TABLE_MAX_PAGES];
   uint32_t freed_pages_count;
   LRU_List lru_list;
@@ -232,6 +232,7 @@ uint32_t* internal_node_child(char* node, uint32_t child_num) {
     return right_child;
   } else {
     uint32_t* child = internal_node_cell(node, child_num);
+
     if (*child == INVALID_PAGE_NUM) {
       printf("Tried to access child %d of node, but was invalid page\n", child_num);
       exit(EXIT_FAILURE);
@@ -357,26 +358,6 @@ void unpin_all_pages(Pager* pager, PinnedPages* tracker) {
     tracker = NULL;
 }
 
-void print_lrulist (Pager* pager) {
-  printf("LINE %d: Number of loaded pages: %d\n", __LINE__, pager->num_loaded_pages);
-  LRUNode* current = pager->lru_list.head;
-  printf("head-->");
-  while (current) {
-    printf("(page %d, index %d,", current->page_num, pager->page_numbers[current->page_num]);
-    if (pager->pinned[current->page_num]) {
-      printf(" pinned)");
-    }
-    else {
-      printf(" unpinned)");
-    }
-    current = current->next;
-    if (current) {
-      printf("-->");
-    }
-  }
-   printf("<--tail\n");
-}
-
 void lru_list_initialize(Pager* pager) {
   pager->lru_list.head = NULL;
   pager->lru_list.tail = NULL;
@@ -453,7 +434,6 @@ uint32_t remove_least_recently_used(Pager* pager) {
 
     if (!node_to_remove) {
       printf("No unpinned pages found in LRU list\n");
-      print_lrulist(pager);
       exit(EXIT_FAILURE);
     }
     uint32_t remove_least_recently_used_page_num = node_to_remove->page_num;
@@ -464,7 +444,6 @@ uint32_t remove_least_recently_used(Pager* pager) {
 
 char* get_page(Pager* pager, uint32_t page_num, PinnedPages* tracker) {
   if (page_num > TABLE_MAX_PAGES) {
-    print_lrulist(pager);
     printf("Tried to fetch page number out of bounds. %d > %d\n", page_num,
            TABLE_MAX_PAGES);
     exit(EXIT_FAILURE);
@@ -476,6 +455,7 @@ char* get_page(Pager* pager, uint32_t page_num, PinnedPages* tracker) {
   if (pager->page_numbers[page_num] == -1) {
     // Cache miss. Allocate memory and load from file.
     char* page = malloc(PAGE_SIZE);
+    memset(page, 0, PAGE_SIZE);
     uint32_t num_pages = pager->file_length / PAGE_SIZE;
 
     // We might save a partial page at the end of the file
@@ -601,12 +581,14 @@ void deserialize_row(char* source, Row* destination) {
 }
 
 void initialize_leaf_node(char* node) {
+  memset(node, 0, PAGE_SIZE);
   set_node_type(node, NODE_LEAF);
   set_node_root(node, false);
   *leaf_node_num_cells(node) = 0;
   *leaf_node_next_leaf(node) = 0;  // 0 represents no sibling
 }
 void initialize_internal_node(char* node) {
+  memset(node, 0, PAGE_SIZE);
   set_node_type(node, NODE_INTERNAL);
   set_node_root(node, false);
   *internal_node_num_keys(node) = 0;
@@ -664,7 +646,15 @@ uint32_t internal_node_find_child(char* node, uint32_t key) {
   uint32_t max_index = num_keys; /* there is one more child than key */
   while (min_index != max_index) { 
     uint32_t index = (min_index + max_index) / 2;
-    uint32_t key_to_right = *internal_node_key(node, index);
+    uint32_t* key_ptr = internal_node_key(node, index);
+    // Check if the pointer returned is NULL (invalid pointer)
+    if (key_ptr == NULL) {
+        printf("Error: internal_node_key returned NULL pointer for index %d\n", index);
+        exit(EXIT_FAILURE);  // or handle it as appropriate
+    }
+
+    // Now it's safe to dereference key_ptr
+    uint32_t key_to_right = *key_ptr;
     if (key_to_right >= key) {
       max_index = index;
     } else {
@@ -811,6 +801,12 @@ Pager* pager_open(const char* filename) {
   }
 
   Pager* pager = malloc(sizeof(Pager));
+  if (pager == NULL) {
+  perror("Unable to allocate memory for Pager");
+  exit(EXIT_FAILURE);
+}
+  memset(pager, 0, sizeof(Pager));
+
   pager->file_descriptor = fd;
 
   off_t file_size = lseek(fd, 0, SEEK_END);
@@ -973,8 +969,11 @@ void db_close(Table* table) {
       pager->pages[i] = NULL;
     }
   }
+
+
   free(pager);
   free(table);
+
 }
 
 MetaCommandResult do_meta_command(InputBuffer* input_buffer, Table* table) {
@@ -989,10 +988,6 @@ MetaCommandResult do_meta_command(InputBuffer* input_buffer, Table* table) {
   } else if (strcmp(input_buffer->buffer, ".constants") == 0) {
     printf("Constants:\n");
     print_constants();
-    return META_COMMAND_SUCCESS;
-  } else if (strcmp(input_buffer->buffer, ".LRUlist") == 0) {
-    printf("LRUlist:\n");
-    print_lrulist(table->pager);
     return META_COMMAND_SUCCESS;
   } else {
     return META_COMMAND_UNRECOGNIZED_COMMAND;
@@ -1525,7 +1520,6 @@ void leaf_node_delete(Cursor* cursor, uint32_t key) {
       parent = get_page(cursor->table->pager, *node_parent(parent), tracker);
       while (*internal_node_right_child(parent) == parent_page_num && !is_node_root(parent)) {
         parent_page_num = *node_parent(get_page(cursor->table->pager, parent_page_num, tracker));
-
         parent = get_page(cursor->table->pager, *node_parent(parent), tracker);
       }
     }
@@ -1597,19 +1591,18 @@ void leaf_node_merge(Cursor* cursor) {
     value = NULL;
   }
   else if (*leaf_node_num_cells(sibling) == 7) {
+    Row* value = malloc(sizeof(Row));
+    for (uint32_t i = 0; i < *leaf_node_num_cells(node); i++) {
+      uint32_t key = *leaf_node_key(node, i);
+      deserialize_row(leaf_node_value(node, i), value);
+      Cursor* sibling_cursor = leaf_node_find(cursor->table, sibling_page_num, key);
+      leaf_node_insert(sibling_cursor, key, value);
+    }
+
+    free(value);
+    value = NULL;
 
     if (*internal_node_num_keys(parent) == 1 && is_node_root(parent)) {
-      Row* value = malloc(sizeof(Row));
-      for (uint32_t i = 0; i < *leaf_node_num_cells(node); i++) {
-        uint32_t key = *leaf_node_key(node, i);
-        deserialize_row(leaf_node_value(node, i), value);
-        Cursor* sibling_cursor = leaf_node_find(cursor->table, sibling_page_num, key);
-        leaf_node_insert(sibling_cursor, key, value);
-      }
-
-      free(value);
-      value = NULL;
-
       memcpy(parent, sibling, PAGE_SIZE);
       set_node_type(parent, NODE_LEAF);
       set_node_root(parent, true);
@@ -1618,17 +1611,6 @@ void leaf_node_merge(Cursor* cursor) {
       push_free_page(cursor->table->pager, cursor->page_num);
     }
     else {
-      Row* value = malloc(sizeof(Row));
-      for (uint32_t i = 0; i < *leaf_node_num_cells(node); i++) {
-        uint32_t key = *leaf_node_key(node, i);
-        deserialize_row(leaf_node_value(node, i), value);
-        Cursor* sibling_cursor = leaf_node_find(cursor->table, sibling_page_num, key);
-        leaf_node_insert(sibling_cursor, key, value);
-      }
-
-      free(value);
-      value = NULL;
-
       if (index == *internal_node_num_keys(parent) && !is_node_root(parent)) {
         uint32_t parent_page_num = *node_parent(node);
         parent = get_page(cursor->table->pager, *node_parent(parent), tracker);
