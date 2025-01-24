@@ -1429,26 +1429,23 @@ void internal_node_delete(Table* table, uint32_t parent_page_num, uint32_t child
 
 void internal_node_merge(Table* table, uint32_t page_num) {
   PinnedPages* tracker = init_pinned_pages();
-
+  /* Fetch the underfilled internal node, its parent, its right child, and its index within its own parent.*/
   char* node = get_page(table->pager, page_num, tracker);
   char* parent = get_page(table->pager, *node_parent(node), tracker);
   char* child = get_page(table->pager, *internal_node_right_child(node), tracker);
   uint32_t index = internal_node_find_child(parent, get_node_max_key(table->pager, node)); 
+  
+  /* Initialize the underfilled internal node's sibling to an invalid page number and 
+  initialize index and cell number to 0. */
+  
   uint32_t sibling_page_num = INVALID_PAGE_NUM;
   uint32_t sibling_index = 0;
   uint32_t sibling_cell_num = 0;
-
-  /*
-  If the internal node is the right child of its parent, then its sibling should be the internal node right to the left of it.
-  Otherwise, the internal node sibling will be the cell directly to the right. THen, we will need to decide which of the sibling's 
-  cells to give to the internal node. If the internal node sibling is to the right of ihe internal node, then we will give it the
-  cell at index 0 by setting that cell to become the node's right child. The previous right child would then become the first cell 
-  of the internal node. Otherwise, if it is to the left of the node, we will give the node the sibling's right child and set it at 
-  index 0 of the node while the node's previous cell becomes its new right child.
-
-  Finally, we will call internal_node_delete on the sibling that was shared.
-  */
-
+  
+  /* Initialize the underfilled internal node's sibling's index to the index of the node directly to the left of it if the underfilled node
+  is the right child of its parent. Otherwise, initialize  underfilledinternal node's sibling's index to the index of the node directly to 
+  the right of it.*/
+  
   if (index == *internal_node_num_keys(parent)) {
     sibling_index = index - 1;
   }
@@ -1459,21 +1456,44 @@ void internal_node_merge(Table* table, uint32_t page_num) {
 
   char* sibling = get_page(table->pager, sibling_page_num, tracker);
 
+  /* If the underfilled internal node's sibling has less more than child, we transfer a child from it to 
+  the underfilled internal node to help fill the underfilled internal node. */
+  
   if (*internal_node_num_keys(sibling) > 1) {
+    
+    /*If the underfilled internal node's sibling is the index of the node directly to the left of the 
+    underfilled internal node, we initialize the index of the underfilled internal node's sibling's 
+    child to index of the underfilled internal node's sibling's right child. If the underfilled internal 
+    node's sibling is the index of the node directly to the right of the underfilled internal node, we 
+    initialize the index of the underfilled internal node's sibling's child to index of the underfilled 
+    internal node's sibling's first child */
+    
     if (sibling_index == index - 1) {
       sibling_cell_num = *internal_node_num_keys(sibling);
     }
     char* source = get_page(table->pager, *internal_node_child(sibling, sibling_cell_num), tracker);
+    
+    /* Set the underfilled internal node's sibling's child's parent to be the underfilled internal node and increase 
+    the underfilled internal node's number of children by 1. */
+    
     *node_parent(source) = page_num;
     *internal_node_num_keys(node) += 1;
 
+    /* If the maximum key of the underfilled internal node is less than the maximum key of the underfilled internal node's 
+    sibling's child's maximum key, we need to update the underfilled internal node's maximum key to be the underfilled internal 
+    node's sibling's child's maximum key */
+    
     if (get_node_max_key(table->pager, source) > get_node_max_key(table->pager, child)) {
       *internal_node_child(node, 0) = *internal_node_right_child(node);
       *internal_node_key(node, 0) = get_node_max_key(table->pager, child);
       *internal_node_right_child(node) = *internal_node_child(sibling, sibling_cell_num);
 
       uint32_t old_max_key = get_node_max_key(table->pager, child);
-      uint32_t new_max_key = get_node_max_key(table->pager, source);
+      uint32_t new_max_key = get_node_max_key(table->pager, source); 
+      
+      /* If the underfilled internal node was the right child of its parent, then we also need to update its key in its parent and
+      so on if the parent is the right child of its own parent. */
+      
       if (*internal_node_right_child(parent) == page_num) {
         uint32_t parent_page_num = *node_parent(node);
         parent = get_page(table->pager, *node_parent(parent), tracker);
@@ -1484,14 +1504,18 @@ void internal_node_merge(Table* table, uint32_t page_num) {
       }
       update_internal_node_key(parent, old_max_key, new_max_key);
     }
+    /* Set the first child of the underfilled internal node to the first child of the underfilled internal node's sibling. */
     else {
       *internal_node_child(node, 0) = *internal_node_child(sibling, sibling_cell_num);
       *internal_node_key(node, 0) = get_node_max_key(table->pager, source);
     }
+    /* Delete from the underfilled internal node's sibling its child that was transferred to the underfilled internla node */
     internal_node_delete(table, sibling_page_num, *internal_node_child(sibling, sibling_cell_num), sibling_cell_num);
     pop_free_page(table->pager);
   }
-
+  /* If the underfilled internal node's sibling has only 1 child and the parent of the underfilled internal node is the root, 
+  we transfer the the underfilled internal node's only child to the underfilled node's sibling and set the sibling as the root.*/
+    
   else if (*internal_node_num_keys(sibling) == 1) {
     if (*internal_node_num_keys(parent) == 1 && is_node_root(parent)) {
       internal_node_insert(table, sibling_page_num, *internal_node_right_child(node));
@@ -1504,6 +1528,11 @@ void internal_node_merge(Table* table, uint32_t page_num) {
 
       push_free_page(table->pager, sibling_page_num);
     }
+
+      /* If the underfilled internal node's sibling has only 1 child and the parent of the underfilled internal node is not the root, 
+      we transfer the the underfilled internal node's only child to the underfilled node's sibling and delete the underfilled internal node
+      from its parent.*/
+      
     else {
       internal_node_insert(table, sibling_page_num, *internal_node_right_child(node));
       *node_parent(child) = sibling_page_num;
