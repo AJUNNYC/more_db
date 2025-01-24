@@ -1388,6 +1388,12 @@ void internal_node_delete(Table* table, uint32_t parent_page_num, uint32_t child
 
   PinnedPages* tracker = init_pinned_pages();
 
+  /* If the iternal node to be deleted is the right child, then we only need to replace it with the its left sibling
+  and update the maximum key in the parent. Otherwise, we can just shift all of the internal node's siblings to the right 
+  of it down by 1 via memcpy. However, if as a result fo deleting the internal node the parent becomes underfilled, then we would 
+  need to either merge it with one of its siblings or give it an extra cell from one of its siblings.
+  */
+
   char* child = get_page(table->pager, child_page_num, tracker);
   char* parent = get_page(table->pager, parent_page_num, tracker);
 
@@ -1431,6 +1437,15 @@ void internal_node_merge(Table* table, uint32_t page_num) {
   uint32_t sibling_page_num = INVALID_PAGE_NUM;
   uint32_t sibling_index = 0;
   uint32_t sibling_cell_num = 0;
+
+  /*
+  If the internal node is the right child of its parent, then its sibling should be the internal node right to the left of it.
+  Otherwise, the internal node sibling will be the cell directly to the right. THen, we will need to decide which of the sibling's 
+  cells to give to the internal node. If the internal node sibling is to the right of ihe internal node, then we will give it the
+  cell at index 0 by setting that cell to become the node's right child. The previous right child would then become the first cell 
+  of the internal node. Otherwise, if it is to the left of the node, we will give the node the sibling's right child and set it at 
+  index 0 of the node while the node's previous cell becomes its new right child.
+  */
 
   if (index == *internal_node_num_keys(parent)) {
     sibling_index = index - 1;
@@ -1501,7 +1516,15 @@ void leaf_node_merge(Cursor* cursor);
 void leaf_node_delete(Cursor* cursor, uint32_t key) {
 
   PinnedPages* tracker = init_pinned_pages();
-
+  /*
+  If the row to be deleted is the right child, we need to update the parent node's right child, 
+  and so on if the parent node is also a right child.
+  Otherwise, we can shift the all rows above the above to be deleted downward by 1
+  At the end, we subtract the total number of cells (or rows) in the node by 1 and check if this
+  causes the node to become underfilled. If it does, and if it is not the root node, then we call 
+  leaf_node_merge(). If it is the root node, then it is fine to let it remain underfilled.
+  
+  */
   char* node = get_page(cursor->table->pager, cursor->page_num, tracker);
   uint32_t num_cells = *leaf_node_num_cells(node);
   
@@ -1539,6 +1562,17 @@ void leaf_node_merge(Cursor* cursor) {
 
   PinnedPages* tracker = init_pinned_pages();
 
+  /* For our underfilled leaf node, we will need to find assign either the node to its left as its sibling
+  if it is the right child. Otherwise, we can just assign the node to the right as the sibling. 
+
+  If the sibling has more than 7 rows, we can safely take a row from it to give to the underfilled road. And 
+  then update the node's max key in the parent internal node.
+
+  However, if the sibling has 7 rows, we insert the underfilled node's rows into the sibling. If, as a result 
+  of this merging, the parent internal node becomes underfilled, we check if the parent internal is the root or not.
+  If it is, then we can simply assign our new sibling node as the root. If it is not,
+  */
+
   char* node = get_page(cursor->table->pager, cursor->page_num, tracker);
   uint32_t node_max_key =get_node_max_key(cursor->table->pager, node);
   char* parent = get_page(cursor->table->pager, *node_parent(node), tracker);
@@ -1573,7 +1607,7 @@ void leaf_node_merge(Cursor* cursor) {
     leaf_node_insert(alternate_cursor, key, value);
     uint32_t new_max_key = get_node_max_key(cursor->table->pager, node);
 
-    if (index == *internal_node_num_keys(parent) && !is_node_root(parent)) { //leave this alone for now
+    if (index == *internal_node_num_keys(parent) && !is_node_root(parent)) { 
         uint32_t parent_page_num = *node_parent(node);
         parent = get_page(cursor->table->pager, *node_parent(parent), tracker);
         while (*internal_node_right_child(parent) == parent_page_num && !is_node_root(parent)) {
@@ -1622,8 +1656,6 @@ void leaf_node_merge(Cursor* cursor) {
       uint32_t new_max_key = get_node_max_key(cursor->table->pager, sibling);
       update_internal_node_key(parent, old_max_key, new_max_key);
       parent = get_page(cursor->table->pager, *node_parent(node), tracker);
-
-      //we can find the previous node by going through leaf noeds
       
       if (index == *internal_node_num_keys(parent) ) {
         *leaf_node_next_leaf(sibling) = *leaf_node_next_leaf(node);
