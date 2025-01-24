@@ -302,7 +302,9 @@ void unpin_page(Pager* pager, uint32_t page_num) {
     printf("Error: Attempted to unpin an invalid page number %u\n", page_num);
   }
 }
-
+/* For every function interacting with the b+ tree, we will create a linked list of pages that it interacts with. 
+Just when that function is about to end, we will unpin all the pages in that linked list. This linked list ensures that 
+the pages the function it interacts with are not unintentionally removed from memory and flushed to disk. */
 PinnedPages* init_pinned_pages() {
     PinnedPages* tracker = (PinnedPages*)malloc(sizeof(PinnedPages));  // Dynamically allocate memory
     if (tracker == NULL) {
@@ -1416,12 +1418,14 @@ void internal_node_delete(Table* table, uint32_t parent_page_num, uint32_t child
         }
       update_internal_node_key(parent, old_max_key, new_max_key);
     }
+  
     /* Decrement the number of children in the parent by 1 */
+  
     parent_page_num = *node_parent(child);
     *internal_node_num_keys(parent) -= 1;
     push_free_page(table->pager, child_page_num);
 
-    /* If the parent becomes underfilled after its child was deleted, call internal_node_merge()*/
+    /* If the parent becomes underfilled after its child was deleted, call internal_node_merge() */
     if (*internal_node_num_keys(parent) < 1 && !is_node_root(parent)) {
       internal_node_merge(table, parent_page_num);
     }
@@ -1441,14 +1445,14 @@ void internal_node_merge(Table* table, uint32_t page_num) {
   uint32_t index = internal_node_find_child(parent, get_node_max_key(table->pager, node)); 
   
   /* Initialize the underfilled internal node's sibling to an invalid page number and 
-  initialize index and cell number to 0. */
+  initialize the sibling's index in the parent and its cell number to 0. */
   
   uint32_t sibling_page_num = INVALID_PAGE_NUM;
   uint32_t sibling_index = 0;
   uint32_t sibling_cell_num = 0;
   
   /* Initialize the underfilled internal node's sibling's index to the index of the node directly to the left of it if the underfilled node
-  is the right child of its parent. Otherwise, initialize  underfilledinternal node's sibling's index to the index of the node directly to 
+  is the right child of its parent. Otherwise, initialize  underfilled internal node's sibling's index to the index of the node directly to 
   the right of it.*/
   
   if (index == *internal_node_num_keys(parent)) {
@@ -1479,7 +1483,7 @@ void internal_node_merge(Table* table, uint32_t page_num) {
     char* source = get_page(table->pager, *internal_node_child(sibling, sibling_cell_num), tracker);
     
     /* Set the underfilled internal node's sibling's child's parent to be the underfilled internal node and increase 
-    the underfilled internal node's number of children by 1. */
+    the underfilled internal node's number of keys by 1. */
     
     *node_parent(source) = page_num;
     *internal_node_num_keys(node) += 1;
@@ -1521,7 +1525,7 @@ void internal_node_merge(Table* table, uint32_t page_num) {
     internal_node_delete(table, sibling_page_num, *internal_node_child(sibling, sibling_cell_num), sibling_cell_num);
     pop_free_page(table->pager);
   }
-  /* If the underfilled internal node's sibling has only 1 child and the parent of the underfilled internal node is the root, 
+  /* If the underfilled internal node's sibling has only 1 key and the parent of the underfilled internal node is the root, 
   we transfer the the underfilled internal node's only child to the underfilled node's sibling and set the sibling as the root.*/
     
   else if (*internal_node_num_keys(sibling) == 1) {
@@ -1620,15 +1624,25 @@ void leaf_node_merge(Cursor* cursor) {
   leaf node's rows into its sibling node. And then update the next leaf pointers for the sibling and the previous node.
   We then delete the underfilled node from its parent.
   */
-
+  
+  /* Fetch the underfilled internal node, its parent, its right child, and its index within its own parent.*/
+  
   char* node = get_page(cursor->table->pager, cursor->page_num, tracker);
   uint32_t node_max_key =get_node_max_key(cursor->table->pager, node);
   char* parent = get_page(cursor->table->pager, *node_parent(node), tracker);
   uint32_t index = internal_node_find_child(parent, get_node_max_key(cursor->table->pager, node));
+  
+ /* Initialize the underfilled leaf node's sibling to an invalid page number and 
+  initialize sibling's index in the parent and its cell number to 0. */
+  
   uint32_t sibling_page_num = INVALID_PAGE_NUM;
   uint32_t sibling_index = 0;
   uint32_t sibling_cell_num = 0;
 
+   /* Initialize the underfilled leaf node's sibling's index to the index of the node directly to the left of it if the underfilled laef node
+  is the right child of its parent. Otherwise, initialize  underfilled leaf node's sibling's index to the index of the node directly to 
+  the right of it.*/
+  
   if (index == *internal_node_num_keys(parent)) {
     sibling_index = index - 1;
   }
@@ -1640,9 +1654,15 @@ void leaf_node_merge(Cursor* cursor) {
   char* sibling = get_page(cursor->table->pager, sibling_page_num, tracker);
   uint32_t old_max_key = get_node_max_key(cursor->table->pager, sibling);
 
+  /* If the underfilled leaf node's sibling has more than 7 rows, transfer a row from it to the underfilled leaf node. */
+  
   if (*leaf_node_num_cells(sibling) > 7) {
     Row* value = malloc(sizeof(Row));
 
+    /* If the underfilled leaf node's sibling is the child directly to the left of the underfilled leaf node, transfer the sibling's 
+    right child to the underfilled leaf node by setting the sibling cell number to the index of the sibling's right child. If not, transfer 
+    the sibling's first child to the underfilled leaf node by keeping the cull number as 0. */
+    
     if (sibling_index == index - 1) {
       sibling_cell_num = *leaf_node_num_cells(sibling) - 1;
     }
@@ -1654,7 +1674,10 @@ void leaf_node_merge(Cursor* cursor) {
     old_max_key = get_node_max_key(cursor->table->pager, node);
     leaf_node_insert(alternate_cursor, key, value);
     uint32_t new_max_key = get_node_max_key(cursor->table->pager, node);
-
+    
+    /* If the underfilled leaf node is the right child of its parent, then we must also update the its key in its own parent 
+    and so on if the parent is the right child of its own parent. */
+    
     if (index == *internal_node_num_keys(parent) && !is_node_root(parent)) { 
         uint32_t parent_page_num = *node_parent(node);
         parent = get_page(cursor->table->pager, *node_parent(parent), tracker);
@@ -1667,11 +1690,16 @@ void leaf_node_merge(Cursor* cursor) {
     update_internal_node_key(parent, old_max_key, new_max_key);
 
     Cursor* sibling_cursor = leaf_node_find(cursor->table, sibling_page_num, key);
+    
+    /* Delete the row that was transferred from the underfilled leaf node's sibling to the underfilled leaf node. */
+    
     leaf_node_delete(sibling_cursor, key);
 
     free(value);
     value = NULL;
   }
+   /* If the underfilled leaf node's sibling has 7 rows, insert the underfilled leaf node's rows into the sibling. */ 
+    
   else if (*leaf_node_num_cells(sibling) == 7) {
     Row* value = malloc(sizeof(Row));
     for (uint32_t i = 0; i < *leaf_node_num_cells(node); i++) {
@@ -1683,7 +1711,9 @@ void leaf_node_merge(Cursor* cursor) {
 
     free(value);
     value = NULL;
-
+    
+    /* If the underfilled leaf node's parent has only 1 key and is the root, set the underfilled leaf node's sibling as the root. */
+    
     if (*internal_node_num_keys(parent) == 1 && is_node_root(parent)) {
       memcpy(parent, sibling, PAGE_SIZE);
       set_node_type(parent, NODE_LEAF);
@@ -1693,6 +1723,9 @@ void leaf_node_merge(Cursor* cursor) {
       push_free_page(cursor->table->pager, cursor->page_num);
     }
     else {
+      /* If the underfilled leaf node is the the right child of its own parent, we need to update the sibling's maximum key in its parent 
+      and so on if the parent is the right child of its parent. */
+      
       if (index == *internal_node_num_keys(parent) && !is_node_root(parent)) {
         uint32_t parent_page_num = *node_parent(node);
         parent = get_page(cursor->table->pager, *node_parent(parent), tracker);
@@ -1704,11 +1737,18 @@ void leaf_node_merge(Cursor* cursor) {
       uint32_t new_max_key = get_node_max_key(cursor->table->pager, sibling);
       update_internal_node_key(parent, old_max_key, new_max_key);
       parent = get_page(cursor->table->pager, *node_parent(node), tracker);
+
+      /* If the underfilled leaf node is the right child of its parent, set the next leaf pointer of the sibling to
+      point to the next leaf node pointed to by the underfilled leaf node. */
       
       if (index == *internal_node_num_keys(parent) ) {
         *leaf_node_next_leaf(sibling) = *leaf_node_next_leaf(node);
       }
       else {
+        
+        /* If the underfilled leaf node was not the right child of its parent, set the next leaf pointer of the leaf node directly to the left of 
+        the underfilled leaf node to point to the sibling. */
+        
         Cursor* prev_cursor = table_start(cursor->table);
         char* prev_leaf_node = get_page(cursor->table->pager, prev_cursor->page_num, tracker);
         while (*leaf_node_next_leaf(prev_leaf_node) != cursor->page_num && prev_cursor->page_num != cursor->page_num) {
@@ -1720,6 +1760,8 @@ void leaf_node_merge(Cursor* cursor) {
         }
       }
 
+      /* Delete the underfilled leaf node from its parent */
+      
       internal_node_delete(cursor->table, *node_parent(node), cursor->page_num, index);
     }
   }
