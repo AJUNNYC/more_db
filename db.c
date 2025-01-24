@@ -1572,7 +1572,9 @@ void leaf_node_merge(Cursor* cursor) {
 
   However, if the sibling has 7 rows, we insert the underfilled node's rows into the sibling. If, as a result 
   of this merging, the parent internal node becomes underfilled, we check if the parent internal is the root or not.
-  If it is, then we can simply assign our new sibling node as the root. If it is not,
+  If it is, then we can simply assign our new sibling node as the root. If it is not, then we insert the underfilled 
+  leaf node's rows into its sibling node. And then update the next leaf pointers for the sibling and the previous node.
+  We then delete the underfilled node from its parent.
   */
 
   char* node = get_page(cursor->table->pager, cursor->page_num, tracker);
