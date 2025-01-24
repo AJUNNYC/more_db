@@ -661,7 +661,6 @@ uint32_t internal_node_find_child(char* node, uint32_t key) {
       min_index = index + 1;
     }
   }
-// why is page 6 at index 0 of page 0
   return min_index;
 }
 
@@ -1388,27 +1387,26 @@ void internal_node_delete(Table* table, uint32_t parent_page_num, uint32_t child
 
   PinnedPages* tracker = init_pinned_pages();
 
-  /* If the internal node to be deleted is the right child, then we only need to replace it with the its left sibling
-  and update the maximum key in the parent. Otherwise, we can just shift all of the internal node's siblings to the right 
-  of it down by 1 via memcpy. However, if as a result fo deleting the internal node the parent becomes underfilled, then we would 
-  need to either merge it with one of its siblings or give it an extra cell from one of its siblings.
-  */
-
   /* Fetch the child to be deleted and its internal node. */
 
   char* child = get_page(table->pager, child_page_num, tracker);
   char* parent = get_page(table->pager, parent_page_num, tracker);
 
-    /* If the child is the right child of its parent,  */
+    /* If the child is the right child of its parent, we update the parent's right child pointer to the child directly left of the right child. */
     if (index == *internal_node_num_keys(parent)) {
       *internal_node_right_child(parent) = *internal_node_child(parent, index - 1);
     }
+      
+    /* If the child is not the right child of its parent, we shift all the children after the child's position in the parent one step to the left.*/
+      
     else {
       for (uint32_t i = index; i + 1 < *internal_node_num_keys(parent); i++) {
         memcpy((char*)internal_node_cell(parent, i), (char*)internal_node_cell(parent, i + 1), INTERNAL_NODE_CELL_SIZE);
       }
     }
-
+    /* If the child was the right child of its parent, then we also need to update its key in its parent and
+      so on if the parent is the right child of its own parent. */
+  
     if (index == *internal_node_num_keys(parent)) {
       uint32_t old_max_key = get_node_max_key(table->pager, child);
       uint32_t new_max_key = get_node_max_key(table->pager, get_page(table->pager, *internal_node_right_child(parent), tracker));
@@ -1418,10 +1416,12 @@ void internal_node_delete(Table* table, uint32_t parent_page_num, uint32_t child
         }
       update_internal_node_key(parent, old_max_key, new_max_key);
     }
+    /* Decrement the number of children in the parent by 1 */
     parent_page_num = *node_parent(child);
     *internal_node_num_keys(parent) -= 1;
     push_free_page(table->pager, child_page_num);
 
+    /* If the parent becomes underfilled after its child was deleted, call internal_node_merge()*/
     if (*internal_node_num_keys(parent) < 1 && !is_node_root(parent)) {
       internal_node_merge(table, parent_page_num);
     }
